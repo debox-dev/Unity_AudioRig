@@ -59,7 +59,6 @@ private IEnumerator PlayWaitAndFadeOutCoroutine()
 
 #### Controlling clip volume at runtime
 ```
-// Plays a clip in a loop, waits 3 seconds, then fades out the clip
 private void StartHumming()
 {
     this._hummAudioControl = AudioPlayer.Main.PlayLoop(_hummLoopClip);
