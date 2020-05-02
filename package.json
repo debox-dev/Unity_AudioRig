@@ -1,0 +1,8 @@
+{
+	"name": "com.debox.audiorig",
+	"description": "Unity Audio Utility",
+	"version": "0.0.1",
+	"unity": "2019.3",
+	"displayName": "DeBox AudioRig",
+	"dependencies": {}
+}
