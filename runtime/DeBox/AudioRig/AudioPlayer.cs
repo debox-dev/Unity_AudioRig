@@ -16,17 +16,17 @@ namespace DeBox.AudioRig
         /// Set/Get spatial blend
         /// </summary>
         float SpatialBlend { get; set; }
-        
+
         /// <summary>
         /// Get/Set volume of the played clip
         /// </summary>
         float Volume { get; set; }
-        
+
         /// <summary>
         /// Get/Set the pitch of the played clip
         /// </summary>
         float Pitch { get; set; }
-        
+
         /// <summary>
         /// Stop playing the clip
         /// </summary>
@@ -38,13 +38,13 @@ namespace DeBox.AudioRig
         /// <param name="duration">Fade out duration</param>
         /// <param name="stopAfter">If true, stop playing after the fade out</param>
         void FadeOut(float duration, bool stopAfter = true);
-        
+
         /// <summary>
         /// Perform a fade in to full volume
         /// </summary>
         /// <param name="duration">Fade in duration</param>
         void FadeIn(float duration);
-        
+
         /// <summary>
         /// Perform a fade in to the specified volume
         /// </summary>
@@ -59,14 +59,14 @@ namespace DeBox.AudioRig
         /// <param name="spatial">Amount of spatial blend, default is 1</param>
         /// <returns>this</returns>
         IAudioPlayControlPromise PlayAt(Vector3 position, float spatial = 1);
-        
+
         /// <summary>
         /// Follow a target transform around while playing the clip
         /// </summary>
         /// <param name="transform">Target transform</param>
         /// <returns>this</returns>
         IAudioPlayControlPromise Follow(Transform transform);
-        
+
         /// <summary>
         /// Stop following
         /// </summary>
@@ -84,6 +84,7 @@ namespace DeBox.AudioRig
         private AudioSourceManager _manager;
         private MonoBehaviour _coroutineRunner;
         private bool _isFollowing = false;
+        private bool _isActive = false;
 
         /// <summary>
         /// Create a new audio control promise
@@ -94,6 +95,7 @@ namespace DeBox.AudioRig
         {
             _manager = manager;
             _coroutineRunner = coroutineRunner;
+            _isActive = true;
         }
 
         /// <summary>
@@ -173,15 +175,16 @@ namespace DeBox.AudioRig
         private IEnumerator FadeCoroutine(float from, float to, float duration, bool stopAfter)
         {
             float remainingTime = duration;
-            while (remainingTime > 0)
+            while (remainingTime > 0 && _isActive)
             {
                 remainingTime = Mathf.Max(0, remainingTime - Time.deltaTime);
                 Volume = Mathf.Lerp(from, to, 1f - (remainingTime / duration));
                 yield return null;
             }
+
             if (stopAfter)
             {
-                Stop();   
+                Stop();
             }
         }
 
@@ -219,6 +222,7 @@ namespace DeBox.AudioRig
                 Debug.LogWarning("null audio manager!!!");
                 return;
             }
+
             _manager.Stop(this);
         }
 
@@ -227,6 +231,7 @@ namespace DeBox.AudioRig
         /// </summary>
         internal void Expire()
         {
+            _isActive = false;
             _manager = null;
             _coroutineRunner = null;
         }
@@ -240,24 +245,46 @@ namespace DeBox.AudioRig
         private AudioPlayControlPromise _currentPromise = null;
 
         private AudioSource _audioSource = null;
+        private AudioPlayer _audioPlayer = null;
+        private float _lastMasterVolumeUpdate = 0;
+        private float _volume = 1;
 
-        public IAudioPlayControlPromise CurrentPromise { get { return _currentPromise; } }
+        public IAudioPlayControlPromise CurrentPromise
+        {
+            get { return _currentPromise; }
+        }
 
-        public float Volume { get { return _audioSource.volume; } set { _audioSource.volume = value; } }
+        public float Volume
+        {
+            get { return _volume; }
+            set
+            {
+                _volume = value;
+                _audioSource.volume = _volume * _audioPlayer.MasterVolume;
+            }
+        }
 
-        public float Pitch { get { return _audioSource.pitch; } set { _audioSource.pitch = value; } }
+        public float Pitch
+        {
+            get { return _audioSource.pitch; }
+            set { _audioSource.pitch = value; }
+        }
 
-        public bool IsPlaying { get { return _currentPromise != null; } }
-        
-        public  float SpatialBlend
+        public bool IsPlaying
+        {
+            get { return _currentPromise != null; }
+        }
+
+        public float SpatialBlend
         {
             get => _audioSource.spatialBlend;
             set => _audioSource.spatialBlend = value;
         }
 
-        public void Initialize(AudioSource audioSource)
+        public void Initialize(AudioSource audioSource, AudioPlayer audioPlayer)
         {
             _audioSource = audioSource;
+            _audioPlayer = audioPlayer;
         }
 
         public void PlaceAt(Vector3 worldPosition)
@@ -271,11 +298,12 @@ namespace DeBox.AudioRig
             {
                 throw new System.Exception("Already playing");
             }
+
             Pitch = 1;
             _currentPromise = new AudioPlayControlPromise(this, this);
             _audioSource.clip = audioClip;
             _audioSource.spatialBlend = spatial;
-            _audioSource.volume = volume;
+            Volume = volume;
             _audioSource.loop = loop;
             _audioSource.Play();
             return _currentPromise;
@@ -288,6 +316,7 @@ namespace DeBox.AudioRig
                 Debug.LogError("Requesting audio controller has expired");
                 return;
             }
+
             _audioSource.Stop();
             ResolvePromise();
         }
@@ -298,9 +327,18 @@ namespace DeBox.AudioRig
             {
                 return;
             }
+
             if (!_audioSource.isPlaying)
             {
                 ResolvePromise();
+            }
+            else
+            {
+                if (_lastMasterVolumeUpdate < _audioPlayer.LastVolumeUpdate)
+                {
+                    _lastMasterVolumeUpdate = _audioPlayer.LastVolumeUpdate;
+                    _audioSource.volume = _volume * _audioPlayer.MasterVolume;
+                }
             }
         }
 
@@ -320,7 +358,7 @@ namespace DeBox.AudioRig
     {
         [SerializeField, Tooltip("Optional output mixer group")]
         private AudioMixerGroup outputGroup = null;
-        
+
         [SerializeField, Tooltip("Optional AudioSource prefab to use")]
         private AudioSource audioSourcePrefab = null;
 
@@ -332,21 +370,38 @@ namespace DeBox.AudioRig
 
         private AudioSourceManager[] _audioSourceManagers = null;
 
+        private float _masterVolume = 1;
+        
+        internal float LastVolumeUpdate { get; private set; }
+
         /// <summary>
         /// Indicates the manager is initialized
         /// </summary>
         public bool IsInitialized { get; protected set; }
 
         /// <summary>
+        /// Global volume for this player
+        /// </summary>
+        public float MasterVolume
+        {
+            get => _masterVolume;
+            set
+            {
+                LastVolumeUpdate = Time.time;
+                _masterVolume = value;
+            }
+        }
+
+        /// <summary>
         /// Returns the main AudioPlayer if such exists
         /// </summary>
         public static AudioPlayer Main { get; private set; }
-        
+
         /// <summary>
         /// Unity Awake, initializes the manager
         /// </summary>
         protected virtual void Awake()
-        {            
+        {
             if (isMain)
             {
                 if (Main != null)
@@ -355,8 +410,10 @@ namespace DeBox.AudioRig
                     Destroy(gameObject);
                     return;
                 }
+
                 Main = this;
             }
+
             InitializeIfRequired();
         }
 
@@ -381,6 +438,7 @@ namespace DeBox.AudioRig
                 Debug.LogError("Requested play of null audio clip");
                 return null;
             }
+
             var control = Play(audioClip, 1, false, 1);
             control?.PlayAt(position);
             return control;
@@ -408,6 +466,7 @@ namespace DeBox.AudioRig
                 Debug.LogError("Requested play of null audio clip");
                 return null;
             }
+
             return Play(audioClip, 1);
         }
 
@@ -440,6 +499,7 @@ namespace DeBox.AudioRig
                     return audioSourceManager.Play(clip, volume, loop, spatial);
                 }
             }
+
             Debug.LogError("No available audio sources");
             return null;
         }
@@ -450,6 +510,7 @@ namespace DeBox.AudioRig
             {
                 return Instantiate(audioSourcePrefab);
             }
+
             var instanceGameObject = new GameObject("AudioSource");
             var audioSource = instanceGameObject.AddComponent<AudioSource>();
             return audioSource;
@@ -464,9 +525,10 @@ namespace DeBox.AudioRig
                 audioSource.transform.SetParent(transform);
                 audioSource.outputAudioMixerGroup = outputGroup;
                 var audioSourceManager = audioSource.gameObject.AddComponent<AudioSourceManager>();
-                audioSourceManager.Initialize(audioSource);
+                audioSourceManager.Initialize(audioSource, this);
                 _audioSourceManagers[i] = audioSourceManager;
             }
+
             IsInitialized = true;
         }
 
@@ -476,6 +538,7 @@ namespace DeBox.AudioRig
             {
                 return;
             }
+
             Initialize();
         }
     }

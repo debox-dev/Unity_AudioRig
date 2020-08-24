@@ -1,0 +1,16 @@
+{
+    "name": "com.debox.audiorig.tests",
+    "references": [
+        "com.debox.AudioRig",
+        "RSG.Promises"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
