@@ -500,7 +500,7 @@ namespace DeBox.AudioRig
                 }
             }
 
-            Debug.LogError("No available audio sources");
+            Debug.LogWarning("No available audio sources");
             return null;
         }
 
