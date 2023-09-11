@@ -106,6 +106,11 @@ namespace DeBox.AudioRig
         public IAudioPlayControlPromise Follow(Transform transform)
         {
             _manager.SpatialBlend = 1;
+            if (transform == null)
+            {
+                Debug.LogError("Cannot follow null transform");
+                return this;
+            }
             _coroutineRunner.StartCoroutine(FollowCoroutine(transform));
             return this;
         }
@@ -125,6 +130,12 @@ namespace DeBox.AudioRig
             _isFollowing = true;
             while (_isFollowing)
             {
+                if (transform == null)
+                {
+                    Debug.Log("Sound stops following null transform");
+                    StopFollow();
+                    yield break;
+                }
                 PlayAt(transform.position);
                 yield return null;
             }
